@@ -5,6 +5,8 @@ import dev.meyi.bn.BazaarNotifier;
 import dev.meyi.bn.json.resp.BazaarItem;
 import dev.meyi.bn.utilities.RenderUtils;
 
+import java.util.List;
+
 public class Order {
 
   public String product;
@@ -47,74 +49,68 @@ public class Order {
   }
 
   public void updateStatus() {
-    OrderStatus newOrderStatus;
-    if (!BazaarNotifier.activeBazaar) {
+    if (!BazaarNotifier.activeBazaar) return;
+
+    List<BazaarItem.BazaarSubItem> summary =
+            (type == OrderType.BUY)
+                    ? BazaarNotifier.bazaarDataRaw.products.get(getProductId()).sell_summary
+                    : BazaarNotifier.bazaarDataRaw.products.get(getProductId()).buy_summary;
+
+    if (summary.isEmpty()
+        || creationTime > BazaarNotifier.bazaarDataRaw.lastUpdated) {
+      setStatus(OrderStatus.SEARCHING);
       return;
     }
-    if (OrderType.BUY.equals(this.type)) {
-      if (BazaarNotifier.bazaarDataRaw.products.get(getProductId()).sell_summary.isEmpty()) {
-        orderStatus = OrderStatus.SEARCHING;
-        return;
-      }
-      BazaarItem.BazaarSubItem bazaarSubItem = BazaarNotifier.bazaarDataRaw.products
-          .get(getProductId()).sell_summary.get(0);
-      if(creationTime > BazaarNotifier.bazaarDataRaw.lastUpdated){
-        newOrderStatus = OrderStatus.SEARCHING;
-      }
-      else if (this.pricePerUnit < bazaarSubItem.pricePerUnit) {
-        newOrderStatus = OrderStatus.OUTDATED;
-      } else if (this.pricePerUnit == bazaarSubItem.pricePerUnit
-          && this.startAmount >= bazaarSubItem.amount
-          && bazaarSubItem.orders == 1) { //&& this.amountRemaining <= bazaarSubItem.amount
-        newOrderStatus = OrderStatus.BEST;
-      } else if (this.pricePerUnit > bazaarSubItem.pricePerUnit) {
-        newOrderStatus = OrderStatus.SEARCHING;
-      } else if (this.pricePerUnit == bazaarSubItem.pricePerUnit && bazaarSubItem.orders == 1) {
-        newOrderStatus = OrderStatus.SEARCHING;
-      } else if (this.pricePerUnit == bazaarSubItem.pricePerUnit && bazaarSubItem.orders > 1 &&
-          BazaarNotifier.orders.stream().filter(order -> this.product.equals(order.product)
-              && this.pricePerUnit == order.pricePerUnit).count() != bazaarSubItem.orders) {
-        newOrderStatus = OrderStatus.MATCHED;
-      } else {
-        newOrderStatus = OrderStatus.BEST;
-      }
+
+    BazaarItem.BazaarSubItem best = summary.get(0);
+
+    // factor = +1 for BUY  (higher API price means *we* are outdated if we're undercut),
+    //          -1 for SELL (lower API price means *we* are outdated if we're overcut)
+    int factor = (type == OrderType.BUY) ? 1 : -1;
+
+    double diff = factor * (pricePerUnit - best.pricePerUnit);
+
+    if (diff < 0) {
+      setStatus(OrderStatus.OUTDATED);
+    } else if (diff > 0) {
+      setStatus(OrderStatus.SEARCHING);
     } else {
-      if (BazaarNotifier.bazaarDataRaw.products.get(getProductId()).buy_summary.isEmpty()) {
-        orderStatus = OrderStatus.SEARCHING;
-        return;
-      }
-      BazaarItem.BazaarSubItem bazaarSubItem = BazaarNotifier.bazaarDataRaw.products
-          .get(getProductId()).buy_summary.get(0);
-      if(creationTime > BazaarNotifier.bazaarDataRaw.lastUpdated){
-        newOrderStatus = OrderStatus.SEARCHING;
-      }
-      else if (this.pricePerUnit > bazaarSubItem.pricePerUnit) {
-        newOrderStatus = OrderStatus.OUTDATED;
-      } else if (this.pricePerUnit == bazaarSubItem.pricePerUnit
-          && this.startAmount >= bazaarSubItem.amount && bazaarSubItem.orders == 1) {
-        newOrderStatus = OrderStatus.BEST;
-      } else if (this.pricePerUnit < bazaarSubItem.pricePerUnit) {
-        newOrderStatus = OrderStatus.SEARCHING;
-      } else if (this.pricePerUnit == bazaarSubItem.pricePerUnit && bazaarSubItem.orders == 1) {
-        newOrderStatus = OrderStatus.SEARCHING;
-      } else if (this.pricePerUnit == bazaarSubItem.pricePerUnit && bazaarSubItem.orders > 1 &&
-          BazaarNotifier.orders.stream().filter(order -> this.product.equals(order.product)
-              && this.pricePerUnit == order.pricePerUnit).count() != bazaarSubItem.orders) {
-        newOrderStatus = OrderStatus.MATCHED;
+      // diff == 0: same price
+      long samePriceCount = BazaarNotifier.orders.stream()
+              .filter(o -> o.type == type
+                      && o.getProductId().equals(getProductId())
+                      && Double.compare(o.pricePerUnit, pricePerUnit) == 0)
+              .count();
+
+      if (best.orders == 1 && startAmount >= best.amount) {
+        setStatus(OrderStatus.BEST);
+      } else if (best.orders > 1 && samePriceCount != best.orders) {
+        setStatus(OrderStatus.MATCHED);
       } else {
-        newOrderStatus = OrderStatus.BEST;
+        setStatus(OrderStatus.SEARCHING);
       }
     }
-    if (this.orderStatus != newOrderStatus) {
-      if (OrderStatus.BEST.equals(newOrderStatus) && this.orderStatus != OrderStatus.SEARCHING) {
-        RenderUtils.chatNotification(this, "REVIVED");
-      } else if (OrderStatus.MATCHED.equals(newOrderStatus)) {
+
+  }
+
+  private void setStatus(OrderStatus newStatus) {
+    if (this.orderStatus == newStatus) return;
+
+    switch (newStatus) {
+      case BEST:
+        if (this.orderStatus != OrderStatus.SEARCHING)
+          RenderUtils.chatNotification(this, "REVIVED");
+        break;
+      case MATCHED:
         RenderUtils.chatNotification(this, "MATCHED");
-      } else if (OrderStatus.OUTDATED.equals(newOrderStatus)) {
+        break;
+      case OUTDATED:
         RenderUtils.chatNotification(this, "OUTDATED");
-      }
-      this.orderStatus = newOrderStatus;
+        break;
+      default:
+        break;
     }
+    this.orderStatus = newStatus;
   }
 
   public enum OrderStatus {BEST, MATCHED, OUTDATED, SEARCHING}
