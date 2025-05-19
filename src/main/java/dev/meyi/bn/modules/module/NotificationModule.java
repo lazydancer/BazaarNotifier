@@ -10,6 +10,7 @@ import dev.meyi.bn.utilities.Defaults;
 import dev.meyi.bn.utilities.ReflectionHelper;
 import dev.meyi.bn.utilities.RenderUtils;
 import dev.meyi.bn.utilities.Utils;
+import dev.meyi.bn.utilities.ScheduledEvents;
 import java.awt.Color;
 import java.util.ArrayList;
 import java.util.List;
@@ -104,6 +105,18 @@ public class NotificationModule extends Module {
 
         items.add(message);
       }
+
+      long now = System.currentTimeMillis();
+      long millisLeft = ScheduledEvents.nextBazaarFetch - now;
+      if (millisLeft < 0) millisLeft = 0;
+      String timerText = String.format("Next update: %.0fs", millisLeft / 1000.0);
+
+      ArrayList<ColoredText> timerRow = new ArrayList<>();
+      timerRow.add(new ColoredText(
+              timerText,
+              BazaarNotifier.config.infoColor.toJavaColor()));
+      items.add(timerRow);
+
       longestString = RenderUtils.getLongestString(items);
       RenderUtils.drawColorfulParagraph(items, (int)position.getX() + padding, (int)position.getY() + padding, scale);
     } else {

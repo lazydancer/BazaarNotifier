@@ -24,7 +24,6 @@ public class ScheduledEvents {
 
   private ScheduledEvents() {
     executors.put("bazaar", getScheduler("bazaar"));
-    executors.put("notification", getScheduler("notification"));
     executors.put("crafting", getScheduler("crafting"));
     executors.put("suggestion", getScheduler("suggestion"));
     executors.put("collection", getScheduler("collection"));
@@ -44,8 +43,6 @@ public class ScheduledEvents {
     switch (key) {
       case "bazaar":
         return getBazaarData();
-      case "notification":
-        return notificationLoop();
       case "crafting":
         return craftingBankLoop();
       case "suggestion":
@@ -96,19 +93,45 @@ public class ScheduledEvents {
     return ex;
   }
 
+  private static final long BAZAAR_FETCH_INTERVAL = 20_000L;  // nominal 20 s
+  private static final long BAZAAR_FETCH_BUFFER   =   200L;  // +0.2 s fudge
+  public static volatile long nextBazaarFetch = System.currentTimeMillis() + BAZAAR_FETCH_BUFFER;
   public ScheduledExecutorService getBazaarData() {
-    ScheduledExecutorService ex = Executors.newScheduledThreadPool(1);
-    ex.scheduleAtFixedRate(() -> {
-      if (BazaarNotifier.activeBazaar) {
-        try {
-          BazaarNotifier.bazaarDataRaw = Utils.getBazaarData();
-        } catch (Exception t) {
-          t.printStackTrace();
+    final long BAZAAR_FETCH_INTERVAL = 20_000L;  // nominal 20 s
+
+    ScheduledExecutorService ex = Executors.newSingleThreadScheduledExecutor();
+    Runnable fetcher = new Runnable() {
+      @Override
+      public void run() {
+        if (BazaarNotifier.activeBazaar) {
+          try {
+            BazaarNotifier.bazaarDataRaw = Utils.getBazaarData();
+
+            for (Order order : BazaarNotifier.orders) {
+              order.updateStatus();
+            }
+
+            long updated = BazaarNotifier.bazaarDataRaw.lastUpdated;
+            // schedule the next fetch at (lastUpdated + interval + buffer)
+            nextBazaarFetch = updated
+                    + BAZAAR_FETCH_INTERVAL
+                    + BAZAAR_FETCH_BUFFER;
+          } catch (Exception t) {
+            t.printStackTrace();
+            // back off a little on failure
+            ex.schedule(this, 5, TimeUnit.SECONDS);
+            return;
+          }
         }
-      }
-    }, 0, 2, TimeUnit.SECONDS);
-    return ex;
-  }
+      long now   = System.currentTimeMillis();
+      long delay = nextBazaarFetch - now;
+      if (delay < 0) delay = 0;
+      ex.schedule(this, delay, TimeUnit.MILLISECONDS);
+    }
+  };
+  ex.schedule(fetcher, 0, TimeUnit.MILLISECONDS);
+  return ex;
+}
 
   public ScheduledExecutorService suggestionLoop() {
     ScheduledExecutorService ex = Executors.newScheduledThreadPool(1);
@@ -138,21 +161,4 @@ public class ScheduledEvents {
     return ex;
   }
 
-
-  public ScheduledExecutorService notificationLoop() {
-    ScheduledExecutorService ex = Executors.newScheduledThreadPool(1);
-    ex.scheduleAtFixedRate(() -> {
-      if (BazaarNotifier.activeBazaar) {
-        try {
-          for (Order order : BazaarNotifier.orders) {
-            order.updateStatus();
-          }
-        } catch (Exception t) {
-          t.printStackTrace();
-        }
-      }
-    }, 0, 2, TimeUnit.SECONDS);
-
-    return ex;
-  }
 }
