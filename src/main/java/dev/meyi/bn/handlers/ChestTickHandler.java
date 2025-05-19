@@ -69,23 +69,28 @@ public class ChestTickHandler {
       }
 
       if (BazaarNotifier.bazaarConv.containsValue(displayName)) {
-        String priceString;
+        String rawPriceLine;
         if (lore.get(4).toLowerCase().contains("expire")) {
-          priceString = StringUtils.stripControlCodes(lore.get(6)).replaceAll(",", "")
+          rawPriceLine = StringUtils.stripControlCodes(lore.get(6)).replaceAll(",", "")
               .split(" ")[3];
         } else if (lore.get(5).toLowerCase().contains("expire")) {
-          priceString = StringUtils.stripControlCodes(lore.get(7)).replaceAll(",", "")
+          rawPriceLine = StringUtils.stripControlCodes(lore.get(7)).replaceAll(",", "")
               .split(" ")[3];
         } else {
-          priceString = StringUtils.stripControlCodes(
+          rawPriceLine = StringUtils.stripControlCodes(
               lore.get((lore.get(3).startsWith("Filled:")) ? 5 : 4).replaceAll(",", "")
                   .split(" ")[3]);
         }
+        String cleaned = StringUtils
+                .stripControlCodes(rawPriceLine)
+                .replaceAll("[^0-9.]", "");// remove commas, “ coins”, etc.
+        double pricePerUnit = Double.parseDouble(cleaned);
+
         int orderInQuestion = -1;
         for (int j = 0; j < BazaarNotifier.orders.size(); j++) {
           Order order = BazaarNotifier.orders.get(j);
-          if (priceString.equalsIgnoreCase(order.priceString) && type.equals(
-              order.type)) { // Todo check product also causing problems
+
+          if (order.type == type && Double.compare(order.pricePerUnit, pricePerUnit) == 0) {
             orderInQuestion = j;
             break;
           }
@@ -114,7 +119,7 @@ public class ChestTickHandler {
             }
             String totalAmount = lore.get(2).split(" ")[2];
             int startAmount = Integer.parseInt(totalAmount.substring(0, totalAmount.length()-1).replace(",", ""));
-            Order newOrder = new Order(displayName, startAmount, Double.parseDouble(priceString), priceString, type);
+            Order newOrder = new Order(displayName, type, pricePerUnit, startAmount);
             newOrder.setAmountRemaining(Utils.getOrderAmountLeft(lore, startAmount));
             if (newOrder.getAmountRemaining() != 0) {
               BazaarNotifier.orders.add(newOrder);
@@ -190,15 +195,18 @@ public class ChestTickHandler {
   private boolean orderConfirmation(IInventory chest) {
 
     if (chest.getStackInSlot(13) != null) {
-      String priceString = "";
+      String rawPriceLine = "";
       String product = "";
-      double price = 0;
+      double pricePerUnit = 0;
 
       try {
-        priceString = StringUtils.stripControlCodes(
+        rawPriceLine = StringUtils.stripControlCodes(
                 chest.getStackInSlot(13).getTagCompound().getCompoundTag("display").getTagList("Lore", 8)
                         .getStringTagAt(2)).split(" ")[3].replaceAll(",", "");
-        price = Double.parseDouble(priceString);
+        String cleaned = StringUtils
+                .stripControlCodes(rawPriceLine)
+                .replaceAll("[^0-9.]", "");// remove commas, “ coins”, etc.
+        pricePerUnit = Double.parseDouble(cleaned);
 
         product = StringUtils.stripControlCodes(
                 chest.getStackInSlot(13).getTagCompound().getCompoundTag("display").getTagList("Lore", 8)
@@ -246,7 +254,7 @@ public class ChestTickHandler {
             StringUtils.stripControlCodes(chest.getDisplayName().getUnformattedText())
                 .equalsIgnoreCase("Confirm Sell Offer") ? Order.OrderType.SELL
                 : Order.OrderType.BUY;
-        EventHandler.verify = new Order(product, amount, price, priceString, type);
+        EventHandler.verify = new Order(product, type, pricePerUnit, amount);
       }
     }
     return true;

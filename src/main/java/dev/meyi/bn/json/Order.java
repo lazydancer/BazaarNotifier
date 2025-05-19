@@ -10,30 +10,21 @@ public class Order {
   public String product;
   public int startAmount;
   public double pricePerUnit;
-  public String priceString;
   public OrderStatus orderStatus = OrderStatus.SEARCHING;
   public double orderValue;
   public OrderType type;
   public long creationTime;
   private int amountRemaining;
 
-  public Order(String product, int startAmount, double pricePerUnit, String priceString,
-      OrderType type) {
-    this.product = product;
-    this.startAmount = startAmount;
-    amountRemaining = startAmount;
-    this.pricePerUnit = pricePerUnit;
-    this.priceString = priceString;
-    this.type = type;
-    orderValue = startAmount * pricePerUnit;
-    creationTime = System.currentTimeMillis();
-  }
-
   public Order(String product, OrderType type, double pricePerUnit, int startAmount) {
     this.product = product;
     this.type = type;
     this.pricePerUnit = pricePerUnit;
     this.startAmount = startAmount;
+
+    amountRemaining = startAmount;
+    orderValue = startAmount * pricePerUnit;
+    creationTime = System.currentTimeMillis();
   }
 
   public int getAmountRemaining() {
