@@ -1,6 +1,5 @@
 package dev.meyi.bn.json;
 
-
 import dev.meyi.bn.BazaarNotifier;
 import dev.meyi.bn.json.resp.BazaarItem;
 import dev.meyi.bn.utilities.RenderUtils;
@@ -8,53 +7,56 @@ import dev.meyi.bn.utilities.RenderUtils;
 import java.util.List;
 
 public class Order {
-
-  public String product;
+  // -- Immutable 
+  public String productID;
+  public String productName;
   public int startAmount;
   public double pricePerUnit;
-  public OrderStatus orderStatus = OrderStatus.SEARCHING;
-  public double orderValue;
   public OrderType type;
   public long creationTime;
-  private int amountRemaining;
+  
+  // -- Mutable
+  public OrderStatus orderStatus = OrderStatus.SEARCHING;
+  public int amountRemaining;
+  public double orderValue;
 
-  public Order(String product, OrderType type, double pricePerUnit, int startAmount) {
-    this.product = product;
+  public Order(String productID, OrderType type, double pricePerUnit, int startAmount) {
+    this.productID = productID;
     this.type = type;
     this.pricePerUnit = pricePerUnit;
     this.startAmount = startAmount;
 
-    amountRemaining = startAmount;
-    orderValue = startAmount * pricePerUnit;
-    creationTime = System.currentTimeMillis();
-  }
-
-  public int getAmountRemaining() {
-    return amountRemaining;
-  }
-
-  public void setAmountRemaining(int amountRemaining) {
-    this.amountRemaining = amountRemaining;
-    orderValue = amountRemaining * pricePerUnit;
+    this.amountRemaining = startAmount;
+    this.orderValue = startAmount * pricePerUnit;
+    this.creationTime = System.currentTimeMillis();
+    this.productName = BazaarNotifier.bazaarConv.get(productID);
   }
 
   public boolean matches(Order other) {
-    return other.type == this.type && other.product.equals(this.product)
-        && other.startAmount == this.startAmount &&
-        other.pricePerUnit == this.pricePerUnit;
-  }
-
-  public String getProductId() {
-    return BazaarNotifier.bazaarConv.inverse().get(product);
+    return other.type == this.type && other.productID.equals(this.productID)
+        && other.startAmount == this.startAmount;
   }
 
   public void updateStatus() {
-    if (!BazaarNotifier.activeBazaar) return;
+    if (!BazaarNotifier.activeBazaar) {
+        setStatus(OrderStatus.SEARCHING);
+        return;
+    }
+    if (BazaarNotifier.bazaarDataRaw == null || BazaarNotifier.bazaarDataRaw.products == null) {
+        setStatus(OrderStatus.SEARCHING); // Cannot update status without bazaar data
+        return;
+    }
+
+    String productId = this.productID;
+    if (productId == null) {
+        setStatus(OrderStatus.SEARCHING); // Cannot update status if product ID is not found
+        return;
+    }
 
     List<BazaarItem.BazaarSubItem> summary =
             (type == OrderType.BUY)
-                    ? BazaarNotifier.bazaarDataRaw.products.get(getProductId()).sell_summary
-                    : BazaarNotifier.bazaarDataRaw.products.get(getProductId()).buy_summary;
+                    ? BazaarNotifier.bazaarDataRaw.products.get(productId).sell_summary
+                    : BazaarNotifier.bazaarDataRaw.products.get(productId).buy_summary;
 
     if (summary.isEmpty()
         || creationTime > BazaarNotifier.bazaarDataRaw.lastUpdated) {
@@ -72,13 +74,10 @@ public class Order {
 
     if (diff < 0) {
       setStatus(OrderStatus.OUTDATED);
-    } else if (diff > 0) {
-      setStatus(OrderStatus.SEARCHING);
-    } else {
-      // diff == 0: same price
+    } else { // diff >= 0
       long samePriceCount = BazaarNotifier.orders.stream()
               .filter(o -> o.type == type
-                      && o.getProductId().equals(getProductId())
+                      && o.productID.equals(this.productID)
                       && Double.compare(o.pricePerUnit, pricePerUnit) == 0)
               .count();
 
@@ -90,7 +89,6 @@ public class Order {
         setStatus(OrderStatus.SEARCHING);
       }
     }
-
   }
 
   private void setStatus(OrderStatus newStatus) {

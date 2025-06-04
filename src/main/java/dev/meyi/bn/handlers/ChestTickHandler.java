@@ -101,7 +101,7 @@ public class ChestTickHandler {
           int totalAmount = order.startAmount;
           int amountLeft = Utils.getOrderAmountLeft(lore, totalAmount);
           if (amountLeft > 0) {
-            order.setAmountRemaining(amountLeft);
+            order.amountRemaining = amountLeft;
           }
         } else if (playerName != null) {
           Pattern p3 = Pattern.compile("By: (?:\\[.*\\] )?(.*)");
@@ -120,8 +120,8 @@ public class ChestTickHandler {
             String totalAmount = lore.get(2).split(" ")[2];
             int startAmount = Integer.parseInt(totalAmount.substring(0, totalAmount.length()-1).replace(",", ""));
             Order newOrder = new Order(displayName, type, pricePerUnit, startAmount);
-            newOrder.setAmountRemaining(Utils.getOrderAmountLeft(lore, startAmount));
-            if (newOrder.getAmountRemaining() != 0) {
+            newOrder.amountRemaining = Utils.getOrderAmountLeft(lore, startAmount);
+            if (newOrder.amountRemaining != 0) {
               BazaarNotifier.orders.add(newOrder);
               verifiedOrders = Arrays.copyOf(verifiedOrders, verifiedOrders.length + 1);
               verifiedOrders[verifiedOrders.length-1] = 1;
@@ -248,13 +248,11 @@ public class ChestTickHandler {
                 .getTagList("Lore", 8).getStringTagAt(4)).split(": ")[1].split("x ")[0].replaceAll(
             ",", ""));
 
-        EventHandler.productVerify[0] = productName;
-        EventHandler.productVerify[1] = productWithAmount;
         Order.OrderType type =
             StringUtils.stripControlCodes(chest.getDisplayName().getUnformattedText())
                 .equalsIgnoreCase("Confirm Sell Offer") ? Order.OrderType.SELL
                 : Order.OrderType.BUY;
-        EventHandler.verify = new Order(product, type, pricePerUnit, amount);
+        EventHandler.verify = new Order(productName, type, pricePerUnit, amount);
       }
     }
     return true;

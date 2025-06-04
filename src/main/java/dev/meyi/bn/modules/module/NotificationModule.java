@@ -98,7 +98,7 @@ public class NotificationModule extends Module {
         message.add(new ColoredText(" - ", BazaarNotifier.config.infoColor.toJavaColor()));
         message.add(new ColoredText(BazaarNotifier.dfNoDecimal.format(currentOrder.startAmount)+ "x ",
                 BazaarNotifier.config.itemColor.toJavaColor()));
-        message.add(new ColoredText(currentOrder.product , BazaarNotifier.config.itemColor.toJavaColor()));
+        message.add(new ColoredText(currentOrder.productName , BazaarNotifier.config.itemColor.toJavaColor()));
         message.add(new ColoredText(" - ", BazaarNotifier.config.infoColor.toJavaColor()));
         message.add(new ColoredText(currentOrder.orderStatus.name() + " ", statusSpecificColor));
 
@@ -199,8 +199,12 @@ public class NotificationModule extends Module {
           String itemDisplayName = StringUtils.stripControlCodes(item.getDisplayName());
           Order.OrderType type = itemDisplayName.split(" ")[0]
               .equalsIgnoreCase("sell") ? Order.OrderType.SELL : Order.OrderType.BUY;
-          String product = itemDisplayName
+          String rawProductName = itemDisplayName
               .replaceAll("SELL ", "").replaceAll("BUY ", "");
+          String productId = BazaarNotifier.bazaarConv.inverse().get(rawProductName);
+          if (productId == null) {
+              continue; // Skip this item if product ID cannot be found
+          }
           List<String> lore = Utils.getLoreFromItemStack(item);
 
           int amount = Integer.parseInt(
@@ -214,7 +218,7 @@ public class NotificationModule extends Module {
 
             double pricePerUnit = Double.parseDouble(ppu);
 
-            Order o = new Order(product, type, pricePerUnit, amount);
+            Order o = new Order(productId, type, pricePerUnit, amount);
 
             for (int i = 0; i < BazaarNotifier.orders.size(); i++) {
               if (o.matches(BazaarNotifier.orders.get(hoveredText))) {

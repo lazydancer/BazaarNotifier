@@ -95,7 +95,7 @@ public class RenderUtils {
               + messageColor + BazaarNotifier.dfNoDecimal
               .format(order.startAmount)
               + EnumChatFormatting.GRAY + "x " + messageColor
-              + order.product
+              + order.productName
               + EnumChatFormatting.YELLOW
               + " " + notification + " " + EnumChatFormatting.GRAY + "("
               + messageColor + BazaarNotifier.df.format(order.pricePerUnit)
@@ -112,4 +112,3 @@ public class RenderUtils {
     GL11.glScalef((float) Math.pow(moduleScale, -1), (float) Math.pow(moduleScale, -1), 1);
   }
 }
-

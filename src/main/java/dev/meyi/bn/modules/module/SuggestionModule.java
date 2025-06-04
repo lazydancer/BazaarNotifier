@@ -74,7 +74,13 @@ public class SuggestionModule extends Module{
       for (int i = shift; i < BazaarNotifier.config.suggestionModule.suggestionListLength + shift; i++) {
         ArrayList<ColoredText> message = new ArrayList<>();
         message.add(new ColoredText((i + 1) + ". ", BazaarNotifier.config.numberColor.toJavaColor()));
-        message.add(new ColoredText(list.get(i)[0], BazaarNotifier.config.itemColor.toJavaColor()));
+        String productId = list.get(i)[0];
+        String productName = BazaarNotifier.bazaarConv.get(productId);
+        if (productName == null || productName.isEmpty()) {
+            // Fallback to productID if display name is not found or is empty
+            productName = productId;
+        }
+        message.add(new ColoredText(productName, BazaarNotifier.config.itemColor.toJavaColor()));
         message.add(new ColoredText(" - ", BazaarNotifier.config.infoColor.toJavaColor()));
         message.add(new ColoredText("EP: ", Color.RED));
         message.add(new ColoredText("" + BazaarNotifier.df.format(Double.parseDouble(list.get(i)[1]) *
@@ -114,5 +120,3 @@ public class SuggestionModule extends Module{
   }
 
 }
-
-

@@ -4,27 +4,18 @@ import dev.meyi.bn.BazaarNotifier;
 import dev.meyi.bn.json.Exchange;
 import dev.meyi.bn.json.Order;
 import dev.meyi.bn.json.Order.OrderType;
+import dev.meyi.bn.utilities.ChatMessageParser;
 import dev.meyi.bn.utilities.Utils;
 import java.util.ArrayList;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.Map.Entry;
-import java.util.regex.Matcher;
-import java.util.regex.Pattern;
 
 
 public class BankCalculator {
 
   private static final List<Exchange> orderHistory = new ArrayList<>();
-  private static final Pattern sellOffer = Pattern.compile(
-      "\\[Bazaar] Claimed .* coins from selling (.*)x (.*) at (.*) each!");
-  private static final Pattern buyOrder = Pattern.compile(
-      "\\[Bazaar] Claimed (.*)x (.*) worth .* coins bought for (.*) each!");
-  private static final Pattern instantSell = Pattern.compile(
-      "\\[Bazaar] Sold (.*)x (.*) for (.*) coins!");
-  private static final Pattern instantBuy = Pattern.compile(
-      "\\[Bazaar] Bought (.*)x (.*) for (.*) coins!");
   private static double rawDifference = 0;
   public static double getRawDifference() {
     return rawDifference;
@@ -67,8 +58,8 @@ public class BankCalculator {
         craftingResources.keySet().forEach(key -> availableResources.put(key, new ArrayList<>()));
         for (Exchange exchange : orderHistory) {
           if (exchange.getType() == OrderType.BUY && craftingResources.containsKey(
-              exchange.getProductId())) {
-            availableResources.get(exchange.getProductId()).add(exchange);
+              exchange.productID)) {
+            availableResources.get(exchange.productID).add(exchange);
           }
         }
 
@@ -117,56 +108,37 @@ public class BankCalculator {
   }
 
   public static void evaluate(String message) {
-    String productId;
-    double pricePerUnit;
-    int amount;
-    OrderType type;
-
-    Matcher m;
-
-    if ((m = sellOffer.matcher(message)).find()) {
-      type = OrderType.SELL;
-      amount = Integer.parseInt(m.group(1).replaceAll("[,.]", ""));
-      pricePerUnit = Double.parseDouble(m.group(3).replaceAll(",", ""));
-    } else if ((m = instantSell.matcher(message)).find()) {
-      type = OrderType.SELL;
-      amount = Integer.parseInt(m.group(1).replaceAll("[,.]", ""));
-      double coins = Double.parseDouble(m.group(3).replaceAll(",", ""));
-      pricePerUnit = coins / (double) amount;
-    } else if ((m = buyOrder.matcher(message)).find()) {
-      type = OrderType.BUY;
-      amount = Integer.parseInt(m.group(1).replaceAll("[,.]", ""));
-      pricePerUnit = Double.parseDouble(m.group(3).replaceAll(",", ""));
-    } else if ((m = instantBuy.matcher(message)).find()) {
-      type = OrderType.BUY;
-      amount = Integer.parseInt(m.group(1).replaceAll("[,.]", ""));
-      double coins = Double.parseDouble(m.group(3).replaceAll(",", ""));
-      pricePerUnit = coins / (double) amount;
-    } else {
-      return;
+    Order transactionOrder = ChatMessageParser.parseTransaction(message);
+    
+    if (transactionOrder == null) {
+      return; // Message doesn't match any transaction pattern
     }
-
-    if (BazaarNotifier.bazaarConv.containsValue(m.group(2))) {
-      productId = BazaarNotifier.bazaarConv.inverse().get(m.group(2));
-    } else {
-      productId = Utils.getItemIdFromName(m.group(2))[1];
-    }
-
+    
+    String productId = transactionOrder.productID;
+    
     if (!productId.isEmpty()) {
-      Exchange e = new Exchange(type, productId, pricePerUnit, amount);
-
-      int index;
-      if ((index = orderHistory.indexOf(e)) != -1) {
-        orderHistory.get(index).addAmount(amount);
-      } else {
-        orderHistory.add(e);
-      }
-
-      rawDifference += (((e.getType() == OrderType.BUY) ? -1.0 : 0.99) * e.getPricePerUnit() * (double)e.getAmount());
-      // Regardless of type, because reverse flipping is possible
-      //  aka selling an item you already own and buying back cheaper
+      Exchange exchange = new Exchange(transactionOrder.type, productId, transactionOrder.pricePerUnit, transactionOrder.startAmount);
+      
+      addOrUpdateExchange(exchange);
+      
+      updateRawDifference(exchange);
+      
       calculateBazaarProfit();
     }
+  }
+
+  private static void addOrUpdateExchange(Exchange exchange) {
+    int existingIndex = orderHistory.indexOf(exchange);
+    if (existingIndex != -1) {
+      orderHistory.get(existingIndex).addAmount(exchange.getAmount());
+    } else {
+      orderHistory.add(exchange);
+    }
+  }
+
+  private static void updateRawDifference(Exchange exchange) {
+    double multiplier = (exchange.getType() == OrderType.BUY) ? -1.0 : 0.99;
+    rawDifference += multiplier * exchange.getPricePerUnit() * exchange.getAmount();
   }
 
   public static void evaluateCapHit(Order order) {
