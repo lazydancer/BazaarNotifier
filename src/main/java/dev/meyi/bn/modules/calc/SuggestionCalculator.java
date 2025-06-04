@@ -26,12 +26,7 @@ public class SuggestionCalculator {
           continue;
         }
 
-        if (!BazaarNotifier.bazaarConv.containsKey(key)) {
-          BazaarNotifier.bazaarConv.put(key, key);
-        }
-        String productId = BazaarNotifier.bazaarConv.get(key);
-
-        list.add(new String[]{productId, Double.toString(calculateEP(product))});
+        list.add(new String[]{key, Double.toString(calculateEP(product))});
       }
       list.sort(Comparator.comparingDouble(o -> Double.parseDouble(o[1])));
       Collections.reverse(list);

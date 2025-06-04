@@ -174,7 +174,7 @@ public class CraftingCalculator {
       } else {
         BazaarNotifier.config.collectionCheck = false;
       }
-    } catch (IOException e) {
+    } catch (Exception e) {
       e.printStackTrace();
     }
   }
