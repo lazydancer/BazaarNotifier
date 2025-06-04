@@ -26,8 +26,6 @@ import java.io.StringReader;
 import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
 import java.nio.file.Paths;
-import java.security.KeyManagementException;
-import java.security.NoSuchAlgorithmException;
 import java.text.DecimalFormat;
 import java.util.ArrayList;
 import java.util.Objects;
@@ -122,8 +120,7 @@ public class BazaarNotifier {
 
     try {
       Utils.updateResources();
-    } catch (IOException | KeyManagementException | NoSuchAlgorithmException | ClassCastException e) {
-      System.err.println("Error while getting resources from GitHub");
+    } catch (ClassCastException e) {
       e.printStackTrace();
       JsonObject bazaarConversions = resources.getAsJsonObject("bazaarConversions");
       enchantCraftingList = resources.getAsJsonObject("enchantCraftingList");

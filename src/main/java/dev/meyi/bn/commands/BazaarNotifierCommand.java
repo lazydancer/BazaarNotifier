@@ -6,9 +6,6 @@ import dev.meyi.bn.modules.calc.BankCalculator;
 import dev.meyi.bn.modules.calc.CraftingCalculator;
 import dev.meyi.bn.modules.calc.SuggestionCalculator;
 import dev.meyi.bn.utilities.Utils;
-import java.io.IOException;
-import java.security.KeyManagementException;
-import java.security.NoSuchAlgorithmException;
 import java.util.ArrayList;
 import java.util.List;
 import net.minecraft.command.CommandBase;
@@ -193,7 +190,7 @@ public class BazaarNotifierCommand extends CommandBase {
             try {
               Utils.updateResources();
               date = System.currentTimeMillis();
-            } catch (IOException | KeyManagementException | NoSuchAlgorithmException | ClassCastException e) {
+            } catch (ClassCastException e) {
               player.addChatMessage(new ChatComponentText(
                   BazaarNotifier.prefix + EnumChatFormatting.RED
                       + "Resource update failed. Please try again."));
