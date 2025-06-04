@@ -6,6 +6,8 @@ import cc.polyfrost.oneconfig.platform.Platform;
 import dev.meyi.bn.BazaarNotifier;
 import dev.meyi.bn.json.Order;
 import dev.meyi.bn.modules.calc.BankCalculator;
+import dev.meyi.bn.utilities.ChatMessageParser;
+import dev.meyi.bn.utilities.GuiStringUtils;
 import dev.meyi.bn.utilities.ReflectionHelper;
 import net.minecraft.client.Minecraft;
 import net.minecraft.client.gui.inventory.GuiChest;
@@ -22,7 +24,6 @@ import net.minecraftforge.fml.common.network.FMLNetworkEvent.ClientDisconnection
 public class EventHandler {
 
   static Order verify = null;
-  static String[] productVerify = new String[2];
 
   @SubscribeEvent
   public void bazaarChatHandler(ClientChatReceivedEvent e) {
@@ -32,93 +33,33 @@ public class EventHandler {
     }
     String message = StringUtils.stripControlCodes(e.message.getUnformattedText());
 
-    if (message.startsWith("[Bazaar] Claimed") || message.startsWith("[Bazaar] Bought")
-        || message.startsWith("[Bazaar] Sold")) {
-      BankCalculator.evaluate(message);
+    Order order = null;
+
+    order = ChatMessageParser.parseTransaction(message);
+    if (order != null) {
+      BankCalculator.evaluate(message); // This still takes a message, not an Order.
+      return;
     }
 
-    if (message.startsWith("Buy Order Setup!") || message.startsWith("Sell Offer Setup!")
-        || message.startsWith("[Bazaar] Buy Order Setup!") || message.startsWith(
-        "[Bazaar] Sell Offer Setup!")) {
-      if (productVerify[0] != null && productVerify[1] != null && productVerify[0].equals(
-          BazaarNotifier.bazaarConv.inverse().get(message.split("x ", 2)[1].split(" for ")[0]))
-          && productVerify[1].equals(message.split("! ")[1].split(" for ")[0])) {
-        BazaarNotifier.orders.add(verify);
-        BankCalculator.evaluateCapHit(verify);
-        verify = null;
-        productVerify = new String[2];
-      }
-    } else if (message.startsWith("[Bazaar] Your ") && message.endsWith(" was filled!")) {
-      String item = message.split("x ", 2)[1].split(" was ")[0];
-      int amount = Integer.parseInt(
-          message.split(" for ")[1].split("x ", 2)[0].replaceAll(",", ""));
-      int orderToRemove = 0;
-      boolean found = false;
-      double edgePrice;
-      if (message.startsWith("[Bazaar] Your Buy Order")) {
-        edgePrice = Double.MIN_VALUE;
-        for (int i = 0; i < BazaarNotifier.orders.size(); i++) {
-          Order order = BazaarNotifier.orders.get(i);
-          if (order.product.equalsIgnoreCase(item) && order.startAmount == amount
-              && order.type.equals(Order.OrderType.BUY) && order.pricePerUnit > edgePrice) {
-            edgePrice = order.pricePerUnit;
-            orderToRemove = i;
-            found = true;
+    order = ChatMessageParser.parseOrderSetup(message);
+    if (order != null) {
+      handleSetupOrder(order);
+      return;
+    }
 
-          }
-        }
-      } else if (message.startsWith("[Bazaar] Your Sell Offer")) {
-        edgePrice = Double.MAX_VALUE;
-        for (int i = 0; i < BazaarNotifier.orders.size(); i++) {
-          Order order = BazaarNotifier.orders.get(i);
-          if (order.product.equalsIgnoreCase(item) && order.startAmount == amount
-              && order.type.equals(Order.OrderType.SELL) && order.pricePerUnit < edgePrice) {
+    order = ChatMessageParser.parseOrderFilled(message);
+    if (order != null) {
+      handleOrderFilled(order);
+      return;
+    }
 
-            edgePrice = order.pricePerUnit;
-            orderToRemove = i;
-            found = true;
-          }
-        }
-      }
-      if (found) {
-        BazaarNotifier.orders.remove(orderToRemove);
-      } else {
-        System.err.println("There is some error in removing your order from the list!!!");
-      }
-    } else if (message.startsWith("Cancelled!") || message.startsWith("[Bazaar] Cancelled!")) {
-      double refund = 0;
-      int refundAmount = 0;
-      String itemRefunded = "";
-      if (message.endsWith("Buy Order!")) {
-        refund = Double.parseDouble(
-            message.split("Refunded ")[1].split(" coins")[0].replaceAll(",", ""));
-        if (refund >= 10000) {
-          refund = Math.round(refund);
-        }
-      } else if (message.endsWith("Sell Offer!")) {
-        refundAmount = Integer.parseInt(
-            message.split("Refunded ")[1].split("x ", 2)[0].replaceAll(",", ""));
-        itemRefunded = message.split("x ", 2)[1].split(" from")[0];
-
-      }
-      for (int i = 0; i < BazaarNotifier.orders.size(); i++) {
-        Order order = BazaarNotifier.orders.get(i);
-        if (message.endsWith("Buy Order!") && order.type.equals(Order.OrderType.BUY)) {
-          double remaining =
-              (refund >= 10000 ? Math.round(order.orderValue) : order.orderValue) - refund;
-          if (remaining <= 1 && remaining >= 0) {
-            BazaarNotifier.orders.remove(i);
-            break;
-          }
-        } else if (message.endsWith("Sell Offer!") && order.type.equals(Order.OrderType.SELL)) {
-          if (order.product.equalsIgnoreCase(itemRefunded)
-              && order.getAmountRemaining() == refundAmount) {
-            BazaarNotifier.orders.remove(i);
-            break;
-          }
-        }
-      }
-    } else if (message.startsWith("Bazaar! Claimed ") || message.startsWith("[Bazaar] Claimed")) {
+    order = ChatMessageParser.parseCancellation(message);
+    if (order != null) {
+      handleOrderCancellation(order);
+      return;
+    }
+    
+    if (message.startsWith("Bazaar! Claimed ") || message.startsWith("[Bazaar] Claimed")) {
       ChestTickHandler.lastScreenDisplayName = "";
     }
   }
@@ -127,16 +68,11 @@ public class EventHandler {
   public void menuOpenedEvent(GuiOpenEvent e) {
     if (e.gui instanceof GuiChest) {
       IInventory chest = ReflectionHelper.getLowerChestInventory((GuiChest) e.gui);
-      if (chest != null && ((chest.hasCustomName() && (
-          StringUtils.stripControlCodes(chest.getDisplayName().getUnformattedText())
-              .startsWith("Bazaar") || StringUtils.stripControlCodes(
-                  chest.getDisplayName().getUnformattedText())
-              .equalsIgnoreCase("How much do you want to pay?") || StringUtils.stripControlCodes(
-                  chest.getDisplayName().getUnformattedText())
-              .matches("Confirm (Buy|Sell) (Order|Offer)")) || StringUtils.stripControlCodes(
-          chest.getDisplayName().getUnformattedText()).contains("Bazaar"))
-          || BazaarNotifier.forceRender)) {
-        BazaarNotifier.inBazaar = true;
+      if (chest != null && chest.hasCustomName()) {
+        String displayName = chest.getDisplayName().getUnformattedText();
+        if (GuiStringUtils.isBazaarGui(displayName) || BazaarNotifier.forceRender) {
+          BazaarNotifier.inBazaar = true;
+        }
       }
     } else if (e.gui == null || e.gui instanceof GuiEditSign) {
       BazaarNotifier.inBazaar = false;
@@ -162,5 +98,84 @@ public class EventHandler {
         BazaarNotifier.guiToOpen = "";
       }
     }
+  }
+
+  private void handleSetupOrder(Order orderInfo) {
+    if (verify != null) {
+    } else {
+    }
+
+    if (verify != null && verify.matches(orderInfo)) {
+      BazaarNotifier.orders.add(verify);
+      BankCalculator.evaluateCapHit(verify);
+      verify = null;
+    } else {
+    }
+  }
+  
+  private void handleOrderFilled(Order orderInfo) {
+    int orderToRemove = findBestMatchingOrder(orderInfo.productID, orderInfo.startAmount, orderInfo.type);
+    
+    if (orderToRemove != -1) {
+      BazaarNotifier.orders.remove(orderToRemove);
+    } else {
+    }
+  }
+  
+  private int findBestMatchingOrder(String itemName, int amount, Order.OrderType type) {
+    int bestIndex = -1;
+    double edgePrice = (type == Order.OrderType.BUY) ? Double.MIN_VALUE : Double.MAX_VALUE;
+    
+    for (int i = 0; i < BazaarNotifier.orders.size(); i++) {
+      Order order = BazaarNotifier.orders.get(i);
+      
+      if (order.productID.equalsIgnoreCase(itemName) && 
+          order.startAmount == amount && 
+          order.type.equals(type)) {
+        
+        boolean isBetterMatch = (type == Order.OrderType.BUY && order.pricePerUnit > edgePrice) ||
+                               (type == Order.OrderType.SELL && order.pricePerUnit < edgePrice);
+        
+        if (isBetterMatch) {
+          edgePrice = order.pricePerUnit;
+          bestIndex = i;
+        }
+      }
+    }
+    
+    return bestIndex;
+  }
+  
+  private void handleOrderCancellation(Order cancellation) {
+    for (int i = 0; i < BazaarNotifier.orders.size(); i++) {
+      Order order = BazaarNotifier.orders.get(i);
+      
+      if (cancellation.type == Order.OrderType.BUY && order.type.equals(Order.OrderType.BUY)) {
+        // The refundCoins from cancellation is now in cancellation.pricePerUnit
+        if (isMatchingBuyOrderCancellation(order, cancellation.pricePerUnit)) {
+          BazaarNotifier.orders.remove(i);
+          break;
+        }
+      } else if (cancellation.type == Order.OrderType.SELL && order.type.equals(Order.OrderType.SELL)) {
+        // The refundAmount from cancellation is now in cancellation.startAmount
+        if (isMatchingSellOrderCancellation(order, cancellation.startAmount, cancellation.productID)) {
+          BazaarNotifier.orders.remove(i);
+          break;
+        }
+      }
+    }
+  }
+  
+  private boolean isMatchingBuyOrderCancellation(Order order, double refundCoins) {
+    double orderValue = (refundCoins >= 10000.0) ?
+                       Math.round(order.orderValue) : order.orderValue;
+    double remaining = orderValue - refundCoins;
+    return remaining <= 1 && remaining >= 0;
+  }
+  
+  private boolean isMatchingSellOrderCancellation(Order order, int refundAmount, String itemName) {
+    // Convert order.product (display name) to product ID for comparison with itemName (product ID)
+    String orderProductId = order.productID;
+    return orderProductId.equalsIgnoreCase(itemName) && order.amountRemaining == refundAmount;
   }
 }
