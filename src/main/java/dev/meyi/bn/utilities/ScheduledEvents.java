@@ -4,7 +4,7 @@ import dev.meyi.bn.BazaarNotifier;
 import dev.meyi.bn.json.Order;
 import dev.meyi.bn.modules.calc.CraftingCalculator;
 import dev.meyi.bn.modules.calc.SuggestionCalculator;
-import java.text.DateFormat;
+
 import java.util.Date;
 import java.util.HashMap;
 import java.util.Map;
@@ -42,7 +42,7 @@ public class ScheduledEvents {
   private ScheduledExecutorService getScheduler(String key) {
     switch (key) {
       case "bazaar":
-        return getBazaarData();
+        return fetchBazaarData();
       case "crafting":
         return craftingBankLoop();
       case "suggestion":
@@ -93,37 +93,44 @@ public class ScheduledEvents {
     return ex;
   }
 
-  private static final long BAZAAR_FETCH_INTERVAL = 20_000L;  // nominal 20 s
-  private static final long BAZAAR_FETCH_BUFFER   =   200L;  // +0.2 s fudge
-  public static volatile long nextBazaarFetch = System.currentTimeMillis() + BAZAAR_FETCH_BUFFER;
-  public ScheduledExecutorService getBazaarData() {
-    final long BAZAAR_FETCH_INTERVAL = 20_000L;  // nominal 20 s
+  private static final long BAZAAR_FETCH_INTERVAL_MS = 20_000L;  // nominal 20 s
+  private static final long BAZAAR_FETCH_BUFFER_MS   =   200L;  // +0.2 s fudge
+  public static volatile long nextBazaarFetch = System.currentTimeMillis() + BAZAAR_FETCH_BUFFER_MS;
+  private long lastFailureTime = 0L;
+  private static final long COOLDOWN_PERIOD_MILLIS = 60 * 1000L; // 1 minute cooldown
+  public ScheduledExecutorService fetchBazaarData() {
 
     ScheduledExecutorService ex = Executors.newSingleThreadScheduledExecutor();
     Runnable fetcher = new Runnable() {
       @Override
       public void run() {
+        long now = System.currentTimeMillis();
+        if (lastFailureTime != 0L && now < lastFailureTime + COOLDOWN_PERIOD_MILLIS) {
+          long remainingCooldown = (lastFailureTime + COOLDOWN_PERIOD_MILLIS) - now;
+          ex.schedule(this, remainingCooldown, TimeUnit.MILLISECONDS);
+          return;
+        }
+
         if (BazaarNotifier.activeBazaar) {
           try {
             BazaarNotifier.bazaarDataRaw = Utils.getBazaarData();
+            lastFailureTime = 0L;
 
             for (Order order : BazaarNotifier.orders) {
               order.updateStatus();
             }
 
             long updated = BazaarNotifier.bazaarDataRaw.lastUpdated;
-            // schedule the next fetch at (lastUpdated + interval + buffer)
             nextBazaarFetch = updated
-                    + BAZAAR_FETCH_INTERVAL
-                    + BAZAAR_FETCH_BUFFER;
+                    + BAZAAR_FETCH_INTERVAL_MS
+                    + BAZAAR_FETCH_BUFFER_MS;
           } catch (Exception t) {
             t.printStackTrace();
-            // back off a little on failure
-            ex.schedule(this, 5, TimeUnit.SECONDS);
+            lastFailureTime = System.currentTimeMillis(); 
+            ex.schedule(this, COOLDOWN_PERIOD_MILLIS, TimeUnit.MILLISECONDS);
             return;
           }
         }
-      long now   = System.currentTimeMillis();
       long delay = nextBazaarFetch - now;
       if (delay < 0) delay = 0;
       ex.schedule(this, delay, TimeUnit.MILLISECONDS);

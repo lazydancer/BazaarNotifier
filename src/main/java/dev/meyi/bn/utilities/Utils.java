@@ -5,22 +5,13 @@ import com.google.common.collect.HashBiMap;
 import com.google.gson.Gson;
 import com.google.gson.JsonElement;
 import com.google.gson.JsonObject;
-import com.google.gson.JsonSyntaxException;
-import com.google.gson.stream.JsonReader;
 import dev.meyi.bn.BazaarNotifier;
 import dev.meyi.bn.json.resp.BazaarResponse;
-import java.io.BufferedReader;
 import java.io.File;
 import java.io.IOException;
-import java.io.InputStreamReader;
 import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
 import java.nio.file.Paths;
-import java.security.KeyManagementException;
-import java.security.NoSuchAlgorithmException;
-import java.security.cert.CertificateException;
-import java.security.cert.X509Certificate;
-
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Map;
@@ -28,55 +19,13 @@ import java.util.Set;
 import net.minecraft.client.Minecraft;
 import net.minecraft.item.ItemStack;
 import net.minecraft.nbt.NBTTagList;
-import org.apache.commons.io.IOUtils;
 import org.apache.commons.lang3.StringUtils;
-import org.apache.http.HttpResponse;
-import org.apache.http.client.methods.HttpGet;
-import org.apache.http.impl.client.CloseableHttpClient;
-import org.apache.http.impl.client.HttpClientBuilder;
-
-import javax.net.ssl.SSLContext;
-import javax.net.ssl.TrustManager;
-import javax.net.ssl.X509TrustManager;
 
 public class Utils {
-  private static final TrustManager[] trustAllCerts = new TrustManager[] {
-          new X509TrustManager() {
-            @Override
-            public void checkClientTrusted(java.security.cert.X509Certificate[] x509Certificates, String s) throws CertificateException {
-            }
-
-            @Override
-            public void checkServerTrusted(java.security.cert.X509Certificate[] x509Certificates, String s) throws CertificateException {
-            }
-
-            @Override
-            public X509Certificate[] getAcceptedIssuers() {
-              return null;
-            }
-
-          }
-  };
   private static String playerUUID = "";
 
-  public static BazaarResponse getBazaarData() throws IOException {
-    Gson gson = new Gson();
-    CloseableHttpClient client = HttpClientBuilder.create().build();
-    HttpGet request = new HttpGet(
-        "https://api.hypixel.net/v2/skyblock/bazaar");
-    HttpResponse response = client.execute(request);
-
-    String result = IOUtils.toString(new BufferedReader
-        (new InputStreamReader(
-            response.getEntity().getContent())));
-
-    client.close();
-
-    if (isJSONValid(result)) {
-      return gson.fromJson(result, BazaarResponse.class);
-    } else {
-      return new BazaarResponse(false, 0, null);
-    }
+  public static BazaarResponse getBazaarData() {
+    return HttpUtils.fetchBazaarData();
   }
 
 
@@ -87,64 +36,33 @@ public class Utils {
    * href="https://github.com/symt/BazaarNotifier/blob/02114fbef16786c69d7b560d76de53f643970f7e/src/main/java/dev/meyi/bn/utilities/Utils.java#L64">the
    * old code</a>
    */
-  public static List<String> unlockedRecipes() throws IOException {
-    Gson gson = new Gson();
+  public static List<String> unlockedRecipes() {
     if (BazaarNotifier.config.collectionCheck) {
-      try (CloseableHttpClient client = HttpClientBuilder.create().build()) {
-        if (playerUUID.equals("")) {
-          HttpGet request = new HttpGet(
-              "https://api.mojang.com/users/profiles/minecraft/" + Minecraft.getMinecraft()
-                  .getSession().getUsername()); // Change this to your username if testing
-          HttpResponse response = client.execute(request);
-
-          String uuidResponse = IOUtils
-              .toString(
-                  new BufferedReader(new InputStreamReader(response.getEntity().getContent())));
-
-          try {
-            playerUUID = gson.fromJson(uuidResponse, JsonObject.class).get("id").getAsString();
-          } catch (JsonSyntaxException e) {
-            return null;
-          }
+      if (playerUUID.equals("")) {
+        String username = Minecraft.getMinecraft().getSession().getUsername();
+        playerUUID = HttpUtils.fetchPlayerUuid(username);
+        if (playerUUID == null) {
+          return null;
         }
       }
     }
     return null;
   }
 
-  public static boolean isJSONValid(String jsonInString) {
-    Gson gson = new Gson();
+  public static void updateResources() throws ClassCastException {
     try {
-      gson.fromJson(jsonInString, JsonObject.class);
-      return true;
-    } catch (Exception ex) {
-      return false;
-    }
-  }
+      JsonObject resources = HttpUtils.fetchJsonWithTrustAll(BazaarNotifier.RESOURCE_LOCATION);
 
-  public static void updateResources() throws IOException, KeyManagementException, NoSuchAlgorithmException, ClassCastException {
-    Gson gson = new Gson();
-    HttpGet request;
-    HttpResponse response;
-    SSLContext sc = SSLContext.getInstance("SSL");
-    sc.init(null, trustAllCerts, new java.security.SecureRandom());
-    CloseableHttpClient client = HttpClientBuilder.create().setSslcontext(sc).build();
-    request = new HttpGet(BazaarNotifier.RESOURCE_LOCATION);
-    response = client.execute(request);
-
-    JsonReader jsonReader = new JsonReader(
-            new BufferedReader(new InputStreamReader(response.getEntity().getContent(), StandardCharsets.UTF_8)));
-    jsonReader.setLenient(true);
-    try {
-      BazaarNotifier.resources = gson.fromJson(jsonReader, JsonObject.class);
-      BazaarNotifier.bazaarConv = jsonToBimap(
-              BazaarNotifier.resources.getAsJsonObject("bazaarConversions"));
-      BazaarNotifier.enchantCraftingList = BazaarNotifier.resources
-              .getAsJsonObject("enchantCraftingList");
-    } catch (JsonSyntaxException | ClassCastException e) { //ClassCastException is thrown when GitHub is down
+      if (resources != null) {
+        BazaarNotifier.resources = resources;
+        BazaarNotifier.bazaarConv = jsonToBimap(
+            BazaarNotifier.resources.getAsJsonObject("bazaarConversions"));
+        BazaarNotifier.enchantCraftingList = BazaarNotifier.resources
+            .getAsJsonObject("enchantCraftingList");
+      }
+    } catch (ClassCastException e) {
       e.printStackTrace();
-    } finally {
-      client.close();
+      throw e;
     }
   }
 
